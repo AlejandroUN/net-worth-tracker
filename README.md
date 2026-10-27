@@ -1,16 +1,20 @@
 # Balance Mensual
 
-A small personal app I use to track my net worth over time: account balances, investments, debts, and money people owe me, with a monthly snapshot and a chart of how it changes.
+A simple net-worth tracker for people with money in more than one currency.
 
-This is a private tool, not a product. It is shared publicly only because that's how free GitHub Pages hosting works.
+Take a monthly snapshot of your accounts, investments and debts, and see how your balance grows over time.
 
-## How it works
+## Features
 
-- `index.html` is the whole app: a single page that installs on a phone like a native app (manifest + service worker).
-- The data is **not** in this repository. It lives in a private Google Sheet, reached through a Google Apps Script endpoint that requires a PIN.
-- `sw.js` keeps a copy of the app on the device so it opens instantly and works offline.
+- **Monthly snapshots:** each new snapshot starts from the previous one, so you only update what changed.
+- **Multi-currency:** enter euro balances and investments with an exchange rate, and see everything in pesos.
+- **Net worth at a glance:** total assets, debts, cash on hand, and the change since your last snapshot.
+- **Savings statistics:** average saved per month and total saved over the last 12 months.
+- **Investments view:** value, share of the total and trend for each investment.
+- **Money owed to you:** track loans and repayments per person, included automatically in each snapshot.
+- **Works anywhere:** installs on phone or desktop like a native app and opens offline.
+- **PIN protected:** no data is stored in this repository.
 
-## Notes
+## Install
 
-- Please don't try to access the data endpoint; it's rate-limited and locks after repeated wrong PINs.
-- Issues and pull requests are not monitored.
+Open the app in Chrome or Safari and choose **Install app** / **Add to Home Screen**.
