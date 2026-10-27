@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Balance Mensual</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+/* Layout: a bank-statement column. Latest snapshot up top, net-worth line below, figures set in a mono ledger face. */
+:root {
+  --bg: #f3f4f7;
+  --surface: #ffffff;
+  --ink: #141a2e;
+  --muted: #5d6478;
+  --line: #dfe2ea;
+  --accent: #2c3fb5;
+  --accent-soft: #e4e8fb;
+  --good: #11784a;
+  --bad: #b3341c;
+  --font-display: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-figures: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1220; --surface: #181c2d; --ink: #edeff7; --muted: #9ba1b8; --line: #2a3047;
+    --accent: #8b9bff; --accent-soft: #252c52; --good: #4fd093; --bad: #ff8466; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1220; --surface: #181c2d; --ink: #edeff7; --muted: #9ba1b8; --line: #2a3047;
+  --accent: #8b9bff; --accent-soft: #252c52; --good: #4fd093; --bad: #ff8466; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink); font: 16px/1.45 var(--font-display);
+  -webkit-text-size-adjust: 100%; padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+}
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.figure { font-family: var(--font-figures); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.wrap {
+  max-width: 620px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+header.top { position: sticky; top: 0; z-index: 5; background: var(--bg); padding-top: env(safe-area-inset-top, 0px); border-bottom: 1px solid var(--line); }
+.top-inner { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-block: 12px; }
+.top-inner h1 { margin: 0; font: 700 20px var(--font-display); letter-spacing: -.01em; }
+.sync { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.sync::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
+.sync.busy::before { background: var(--accent); }
+.sync.offline::before { background: var(--bad); }
+main { display: flex; flex-direction: column; gap: 22px; padding-block: 18px; }
+h2 { margin: 0 0 10px; font: 600 13px var(--font-display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.positive { color: var(--good); }
+.negative { color: var(--bad); }
+
+.hero { display: flex; flex-direction: column; gap: 4px; }
+.hero .label { color: var(--muted); font-size: 15px; }
+.hero .big { font: 600 clamp(34px, 9vw, 46px)/1.05 var(--font-figures); letter-spacing: -.03em; overflow-wrap: anywhere; }
+.delta { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; }
+.delta b { font-family: var(--font-figures); font-weight: 600; }
+.stat-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; margin-top: 14px; }
+.stat { background: var(--surface); padding: 12px; min-width: 0; }
+.stat .label { font-size: 13px; color: var(--muted); }
+.stat .value { font: 600 16px var(--font-figures); overflow-wrap: anywhere; }
+@media (max-width: 420px) { .stat-row { grid-template-columns: 1fr; } .stat { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; } }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
+.chart-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.chart-head h2 { margin: 0; }
+.segmented { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.segmented button { min-height: 38px; padding: 0 11px; border: 0; background: none; font-size: 14px; font-weight: 600; color: var(--muted); }
+.segmented button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; height: auto; touch-action: pan-y; }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.chart .zero { stroke: var(--muted); stroke-width: 1; }
+.chart .axis-text { fill: var(--muted); font: 11px var(--font-display); }
+.chart .end-label { fill: var(--ink); font: 600 12px var(--font-figures); }
+.chart .crosshair { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.tooltip {
+  position: absolute; top: 0; pointer-events: none; background: var(--ink); color: var(--surface);
+  padding: 6px 10px; border-radius: 8px; font-size: 13px; white-space: nowrap; transform: translateX(-50%);
+}
+.tooltip b { display: block; font: 600 14px var(--font-figures); }
+
+.stat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; }
+.stat-tile { min-width: 0; padding-top: 10px; border-top: 1px solid var(--line); }
+.stat-tile .label { font-size: 13px; color: var(--muted); }
+.stat-tile .value { font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
+.stat-tile .detail { font-size: 12px; color: var(--muted); text-transform: none; }
+.composition { display: flex; flex-direction: column; gap: 10px; }
+.composition-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: baseline; }
+.composition-row .name { min-width: 0; }
+.composition-row .name small { color: var(--muted); font-size: 13px; }
+.composition-row .value { font: 600 15px var(--font-figures); }
+.composition-row .track { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--accent-soft); overflow: hidden; }
+.composition-row .track i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+
+.primary {
+  display: flex; align-items: center; justify-content: center; width: 100%; min-height: 54px; border: 0; border-radius: 14px;
+  background: var(--accent); color: var(--surface); font: 700 17px var(--font-display);
+}
+.list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--surface); }
+.row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; align-items: center; width: 100%;
+  padding: 12px 14px; border: 0; border-bottom: 1px solid var(--line); background: none; text-align: left;
+}
+.row:last-child { border-bottom: 0; }
+.row .title { font-weight: 600; overflow-wrap: anywhere; }
+.row .sub { font-size: 13px; color: var(--muted); }
+.row .value { font: 600 15px var(--font-figures); text-align: right; }
+.row .value small { display: block; font-size: 12px; font-weight: 500; }
+.row.static { cursor: default; }
+.investments { display: flex; flex-direction: column; gap: 12px; }
+.investment { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+.investment-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.investment-head .title { font-weight: 600; }
+.chip { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+.investment-body { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.investment-body > div { min-width: 0; }
+.investment .value { font-size: 20px; font-weight: 600; }
+.investment .sub { font-size: 13px; color: var(--muted); }
+.spark { width: 96px; height: 28px; flex: none; }
+.investment-foot { display: flex; justify-content: space-between; gap: 6px 12px; flex-wrap: wrap; font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 8px; }
+.investment-foot b { font-family: var(--font-figures); }
+.row.total { background: var(--accent-soft); }
+.people { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.person { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.person .label { font-size: 14px; color: var(--muted); }
+.person .value { font: 600 17px var(--font-figures); }
+.person.settled .value { color: var(--muted); }
+.empty { text-align: center; color: var(--muted); padding: 24px 12px; border: 1px dashed var(--line); border-radius: 12px; }
+
+nav.tabs {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; background: var(--surface); border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom, 0px); padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px);
+}
+nav.tabs .wrap { display: grid; grid-template-columns: repeat(4, 1fr); }
+nav.tabs button { min-height: 60px; border: 0; background: none; font-weight: 600; color: var(--muted); border-top: 3px solid transparent; }
+nav.tabs button[aria-selected="true"] { color: var(--ink); border-top-color: var(--accent); }
+
+.sheet { position: fixed; inset: 0; z-index: 10; background: var(--bg); overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.sheet header { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line); padding-top: env(safe-area-inset-top, 0px); }
+.sheet header .wrap { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-block: 8px; }
+.sheet header h2 { margin: 0; color: var(--ink); font-size: 15px; }
+.ghost { min-height: 46px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); font-weight: 600; }
+form { display: flex; flex-direction: column; gap: 22px; padding-block: 16px 150px; }
+fieldset { border: 0; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+legend { font: 600 13px var(--font-display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; padding: 0; }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field.full { grid-column: 1 / -1; }
+.field label { font-size: 14px; color: var(--muted); }
+.field input, .field select { width: 100%; min-height: 50px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); font-size: 17px; }
+.field input.money { text-align: right; font-family: var(--font-figures); font-weight: 600; }
+.note { grid-column: 1 / -1; font-size: 13px; color: var(--muted); margin: -4px 0 0; }
+.computed { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 10px; padding: 12px; border-radius: 10px; background: var(--accent-soft); font-size: 15px; }
+.computed b { font-family: var(--font-figures); }
+.type-switch { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.type-switch label { display: flex; align-items: center; justify-content: center; min-height: 50px; font-weight: 600; color: var(--muted); background: var(--surface); }
+.type-switch input { position: absolute; opacity: 0; pointer-events: none; }
+.type-switch input:checked + span { color: var(--surface); }
+.type-switch label:has(input:checked) { background: var(--ink); color: var(--surface); }
+.sheet footer { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); border-top: 1px solid var(--line); padding-top: 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
+.sheet footer .wrap { display: flex; flex-direction: column; gap: 8px; }
+.totals { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; color: var(--muted); flex-wrap: wrap; }
+.totals b { color: var(--ink); font-family: var(--font-figures); }
+.danger { min-height: 50px; border-radius: 12px; border: 1px solid var(--bad); background: none; color: var(--bad); font-weight: 600; }
+.danger.armed { background: var(--bad); color: var(--surface); }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(84px + env(safe-area-inset-bottom, 0px)); z-index: 20; background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: 15px; max-width: calc(100% - 32px); }
+.pin-screen { min-height: 70vh; display: flex; flex-direction: column; justify-content: center; gap: 14px; text-align: center; }
+.pin-screen input { text-align: center; letter-spacing: .4em; font-size: 26px; }
+.error { color: var(--bad); font-size: 15px; }
+@media (prefers-reduced-motion: no-preference) {
+  .sheet { animation: rise .18s ease-out; }
+  @keyframes rise { from { transform: translateY(14px); opacity: .6; } }
+}
+</style>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#f3f4f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1220" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Balance Mensual">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+</head>
+<body>
+<div id="pin-view" hidden>
+  <div class="wrap pin-screen">
+    <h1 style="margin:0;font:700 28px var(--font-display)">Balance Mensual</h1>
+    <div class="field"><input id="pin-input" type="password" inputmode="numeric" autocomplete="off" aria-label="PIN" placeholder="PIN"></div>
+    <div id="pin-error" class="error" hidden>Ese PIN no es. Intente otra vez.</div>
+    <button id="pin-submit" class="primary" type="button">Entrar</button>
+  </div>
+</div>
+
+<div id="app-view" hidden>
+  <header class="top"><div class="wrap top-inner"><h1>Balance Mensual</h1><span id="sync" class="sync">Al día</span></div></header>
+  <main class="wrap" id="main"></main>
+  <nav class="tabs" role="tablist"><div class="wrap">
+    <button type="button" role="tab" data-tab="resumen">Resumen</button>
+    <button type="button" role="tab" data-tab="inversiones">Inversiones</button>
+    <button type="button" role="tab" data-tab="cortes">Cortes</button>
+    <button type="button" role="tab" data-tab="deben">Me deben</button>
+  </div></nav>
+</div>
+<div id="sheet-root"></div>
+<div id="toast" class="toast" hidden></div>
+
+<script>
+const MONTH_NAMES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const ASSETS = [['amundi', 'Amundi Dividendos DD', 'eur'], ['ibkr', 'IBKR', 'eur'], ['lote', 'Lote Aguazul', 'cop'], ['cdt', 'CDT Nu Bank', 'cop']];
+const DEBTS = [['deudaBeca', 'Deuda beca'], ['deudaCredito', 'Deuda crédito']];
+const NUMBER_KEYS = ['padres', 'bnpEuro', 'tasaEuro', 'banco', 'monto', ...ASSETS.map(item => item[0]), ...DEBTS.map(item => item[0])];
+const SERIES = [['balance', 'Balance'], ['mano', 'A la mano'], ['tengo', 'Tengo'], ['deudas', 'Deudas']];
+const STORAGE_KEYS = { pin: 'balanceMensual.pin', cache: 'balanceMensual.cache', outbox: 'balanceMensual.outbox', local: 'balanceMensual.localData' };
+const isAppsScript = typeof google !== 'undefined' && google.script && google.script.run;
+const API_URL = window.API_URL === undefined ? 'https://script.google.com/macros/s/AKfycbzG3dKzq9w6H8a96aXYWpmCPZHreg4aUG4qKaW9OCgt158FWTOUTXwNI_nmUnP94JZqrg/exec' : window.API_URL;
+const isRemote = Boolean(isAppsScript || API_URL);
+const state = { data: { cortes: [], movimientos: [] }, tab: 'resumen', series: 'balance', outbox: [], syncing: false };
+
+function storageGet(key, fallback) { try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; } catch (error) { return fallback; } }
+function storageSet(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (error) { /* almacenamiento bloqueado */ } }
+
+// ---------- Servidor ----------
+function callServer(functionName, ...args) {
+  if (!isAppsScript && !API_URL) return localServer(functionName, ...args);
+  if (!isAppsScript) {
+    return fetch(API_URL, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: functionName, pin: storageGet(STORAGE_KEYS.pin, ''), args }),
+    }).then(response => response.json()).then(result => { if (!result.ok) throw new Error(result.error); return result.data; });
+  }
+  return new Promise((resolve, reject) => {
+    google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[functionName](storageGet(STORAGE_KEYS.pin, ''), ...args);
+  });
+}
+function localServer(functionName, tableName, payload) {
+  const seed = window.SEED_DATA || { cortes: [], movimientos: [] };
+  const seedVersion = JSON.stringify(seed).length;
+  if (storageGet(STORAGE_KEYS.local + '.seed', 0) !== seedVersion) {
+    storageSet(STORAGE_KEYS.local, null); storageSet(STORAGE_KEYS.outbox, []); state.outbox = [];
+    storageSet(STORAGE_KEYS.local + '.seed', seedVersion);
+  }
+  const data = storageGet(STORAGE_KEYS.local, null) || JSON.parse(JSON.stringify(seed));
+  if (functionName === 'guardar') {
+    const index = data[tableName].findIndex(record => record.id === payload.id);
+    if (index === -1) data[tableName].push(payload); else data[tableName][index] = payload;
+  }
+  if (functionName === 'borrar') data[tableName] = data[tableName].filter(record => record.id !== payload);
+  storageSet(STORAGE_KEYS.local, data);
+  return Promise.resolve(functionName === 'cargarDatos' ? data : true);
+}
+function errorText(error) { return String(error && error.message || error); }
+function isPinError(error) { return /PIN incorrecto|Demasiados intentos/.test(errorText(error)); }
+function normalize(data) {
+  const clean = record => {
+    const copy = { ...record, id: String(record.id) };
+    NUMBER_KEYS.forEach(key => { if (key in copy) copy[key] = Number(copy[key]) || 0; });
+    return copy;
+  };
+  return { cortes: (data.cortes || []).map(clean), movimientos: (data.movimientos || []).map(clean) };
+}
+async function loadFromServer() {
+  setSync('busy', 'Actualizando…');
+  try {
+    state.data = normalize(await callServer('cargarDatos'));
+    state.outbox.forEach(applyChange);
+    storageSet(STORAGE_KEYS.cache, state.data);
+    render();
+    await flushOutbox();
+  } catch (error) {
+    if (isPinError(error)) return showPin(errorText(error));
+    updateSyncLabel(true);
+  }
+}
+function queueChange(change) {
+  state.outbox.push(change);
+  storageSet(STORAGE_KEYS.outbox, state.outbox);
+  applyChange(change);
+  storageSet(STORAGE_KEYS.cache, state.data);
+  render();
+  flushOutbox();
+}
+function applyChange(change) {
+  const table = state.data[change.table];
+  const index = table.findIndex(record => record.id === (change.record ? change.record.id : change.id));
+  if (change.type === 'guardar') { if (index === -1) table.push(change.record); else table[index] = change.record; }
+  if (change.type === 'borrar' && index !== -1) table.splice(index, 1);
+}
+async function flushOutbox() {
+  if (state.syncing) return;
+  state.syncing = true;
+  try {
+    while (state.outbox.length) {
+      setSync('busy', 'Guardando…');
+      const change = state.outbox[0];
+      await callServer(change.type, change.table, change.type === 'guardar' ? change.record : change.id);
+      state.outbox.shift();
+      storageSet(STORAGE_KEYS.outbox, state.outbox);
+    }
+    updateSyncLabel(false);
+  } catch (error) {
+    if (isPinError(error)) { state.syncing = false; return showPin(errorText(error)); }
+    updateSyncLabel(true);
+  }
+  state.syncing = false;
+}
+function setSync(kind, text) { const element = document.getElementById('sync'); element.className = 'sync ' + kind; element.textContent = text; }
+function updateSyncLabel(failed) {
+  if (!state.outbox.length && !failed) return setSync('', isRemote ? 'Al día' : 'Modo prueba');
+  setSync('offline', state.outbox.length ? `Sin conexión · ${state.outbox.length} por subir` : 'Sin conexión');
+}
+
+// ---------- Cálculos ----------
+function today() { const now = new Date(); return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0'); }
+function formatDate(dateText, withYear = true) {
+  const [year, month, day] = dateText.split('-');
+  return `${Number(day)} ${MONTH_NAMES[Number(month) - 1].slice(0, 3)}${withYear ? ' ' + year : ''}`;
+}
+function formatMoney(value) { return (value < 0 ? '−$ ' : '$ ') + Math.round(Math.abs(value)).toLocaleString('es-CO'); }
+function formatSigned(value) { return (value > 0 ? '+' : '') + formatMoney(value); }
+function formatEuro(value) { return '€ ' + value.toLocaleString('es-CO', { maximumFractionDigits: 2 }); }
+function shortMillions(value) {
+  const millions = Math.abs(value) / 1e6;
+  return (value < 0 ? '−' : '') + (millions >= 10 || Number.isInteger(millions) ? Math.round(millions) : millions.toFixed(1).replace('.', ',')) + 'M';
+}
+// Acepta sumas y multiplicaciones simples, como en Excel: 1500*4000 o 150000+30000.
+function parseAmount(text) {
+  const cleaned = String(text || '').replace(/\s/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.');
+  return cleaned.split('+').reduce((sum, term) => sum + term.split('*').reduce((product, factor) => product * (Number(factor) || 0), 1), 0);
+}
+function sortedSnapshots() { return state.data.cortes.slice().sort((first, second) => first.fecha.localeCompare(second.fecha)); }
+function owedAt(date) {
+  return state.data.movimientos.filter(movement => movement.fecha <= date)
+    .reduce((sum, movement) => sum + (movement.tipo === 'pago' ? -movement.monto : movement.monto), 0);
+}
+function assetPesos(snapshot, key) {
+  const currency = ASSETS.find(asset => asset[0] === key)[2];
+  return (snapshot[key] || 0) * (currency === 'eur' ? snapshot.tasaEuro : 1);
+}
+function totals(snapshot) {
+  const bnp = snapshot.bnpEuro * snapshot.tasaEuro;
+  const investments = ASSETS.reduce((sum, [key]) => sum + assetPesos(snapshot, key), 0);
+  const owed = owedAt(snapshot.fecha);
+  const tengo = snapshot.padres + bnp + snapshot.banco + owed + investments;
+  const deudas = DEBTS.reduce((sum, [key]) => sum + (snapshot[key] || 0), 0);
+  return { bnp, investments, owed, tengo, deudas, balance: tengo - deudas, mano: bnp + snapshot.banco - deudas };
+}
+
+// ---------- Pantallas ----------
+const escapeHtml = text => String(text == null ? '' : text).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
+const signClass = value => value < 0 ? 'negative' : value > 0 ? 'positive' : '';
+
+function render() {
+  document.querySelectorAll('nav.tabs button').forEach(button => button.setAttribute('aria-selected', String(button.dataset.tab === state.tab)));
+  document.getElementById('main').innerHTML = state.tab === 'resumen' ? summaryHtml() : state.tab === 'inversiones' ? investmentsHtml() : state.tab === 'cortes' ? snapshotsHtml() : owedHtml();
+  wireChart();
+}
+
+function summaryHtml() {
+  const snapshots = sortedSnapshots();
+  if (!snapshots.length) return `<div class="empty">Todavía no hay cortes. Vaya a “Cortes” y anote el primero.</div>`;
+  const latest = snapshots[snapshots.length - 1], previous = snapshots[snapshots.length - 2];
+  const current = totals(latest), change = previous ? current.balance - totals(previous).balance : 0;
+  const parts = [
+    ['Padres', '', latest.padres],
+    ['BNP', `${formatEuro(latest.bnpEuro)} × ${latest.tasaEuro.toLocaleString('es-CO')}`, current.bnp],
+    ['Davivienda / Nequi', '', latest.banco],
+    ['Inversiones', ASSETS.filter(([key]) => latest[key]).map(item => item[1]).join(', '), current.investments],
+    ['Me deben', '', current.owed],
+  ].filter(part => part[2]);
+  const largest = Math.max(1, ...parts.map(part => Math.abs(part[2])));
+  return `
+  <section class="hero">
+    <div class="label">Balance al ${formatDate(latest.fecha)}</div>
+    <div class="big figure ${signClass(current.balance)}">${formatMoney(current.balance)}</div>
+    ${previous ? `<div class="delta"><b class="${signClass(change)}">${formatSigned(change)}</b><span>desde el ${formatDate(previous.fecha)}</span></div>` : ''}
+    <div class="stat-row">
+      <div class="stat"><div class="label">Tengo</div><div class="value">${formatMoney(current.tengo)}</div></div>
+      <div class="stat"><div class="label">Deudas</div><div class="value negative">${formatMoney(-current.deudas)}</div></div>
+      <div class="stat"><div class="label">A la mano</div><div class="value ${signClass(current.mano)}">${formatMoney(current.mano)}</div></div>
+    </div>
+  </section>
+  ${statisticsHtml(snapshots)}
+  ${chartHtml(snapshots)}
+  <section class="card">
+    <h2>Dónde está lo que tengo</h2>
+    <div class="composition">${parts.map(([name, detail, value]) => `
+      <div class="composition-row"><span class="name">${name}${detail ? `<br><small>${escapeHtml(detail)}</small>` : ''}</span>
+        <span class="value">${formatMoney(value)}</span><span class="track"><i style="width:${Math.max(0, value) / largest * 100}%"></i></span></div>`).join('')}
+    </div>
+  </section>`;
+}
+
+const DAYS_PER_MONTH = 30.44;
+function monthsBetween(firstDate, secondDate) {
+  return (new Date(secondDate + 'T00:00:00') - new Date(firstDate + 'T00:00:00')) / 86400000 / DAYS_PER_MONTH;
+}
+function shiftDate(dateText, months) {
+  const date = new Date(dateText + 'T00:00:00');
+  date.setMonth(date.getMonth() + months);
+  return date.toISOString().slice(0, 10);
+}
+function statisticsHtml(snapshots) {
+  if (snapshots.length < 2) return '';
+  const latest = snapshots[snapshots.length - 1];
+  const baseline = snapshots.filter(snapshot => snapshot.fecha <= shiftDate(latest.fecha, -12)).slice(-1)[0] || snapshots[0];
+  const months = monthsBetween(baseline.fecha, latest.fecha) || 1;
+  const saved = totals(latest).balance - totals(baseline).balance;
+  const tile = (label, value, detail) => `<div class="stat-tile"><div class="label">${label}</div>
+    <div class="value figure ${signClass(value)}">${formatSigned(value)}</div><div class="detail">${detail}</div></div>`;
+  return `<section class="card">
+    <h2>Últimos 12 meses</h2>
+    <div class="stat-grid">
+      ${tile('Ahorro promedio por mes', saved / months, `Desde el ${formatDate(baseline.fecha)}`)}
+      ${tile('Ahorrado en total', saved, `En ${Math.round(months)} meses`)}
+    </div>
+  </section>`;
+}
+
+function chartHtml(snapshots) {
+  const points = snapshots.map(snapshot => ({ date: snapshot.fecha, value: totals(snapshot)[state.series] * (state.series === 'deudas' ? -1 : 1) }));
+  const width = 340, height = 200, left = 38, right = 44, top = 14, bottom = 24;
+  const time = date => new Date(date + 'T00:00:00').getTime();
+  const firstTime = time(points[0].date), lastTime = time(points[points.length - 1].date);
+  const scaleX = date => left + (lastTime === firstTime ? 0.5 : (time(date) - firstTime) / (lastTime - firstTime)) * (width - left - right);
+  const values = points.map(point => point.value);
+  const rawSpan = Math.max(0, ...values) - Math.min(0, ...values) || 1e6;
+  const step = [5e6, 10e6, 20e6, 25e6, 50e6, 100e6].find(candidate => rawSpan / candidate <= 5) || 200e6;
+  const maxValue = Math.ceil(Math.max(0, ...values) / step) * step, minValue = Math.floor(Math.min(0, ...values) / step) * step;
+  const scaleY = value => top + (maxValue - value) / ((maxValue - minValue) || 1) * (height - top - bottom);
+  const ticks = [];
+  for (let tick = minValue; tick <= maxValue; tick += step) ticks.push(tick);
+  const years = [];
+  for (let year = Number(points[0].date.slice(0, 4)); year <= Number(points[points.length - 1].date.slice(0, 4)); year++) {
+    [1, 7].forEach(month => {
+      const date = `${year}-${String(month).padStart(2, '0')}-01`;
+      if (time(date) >= firstTime && time(date) <= lastTime) years.push(date);
+    });
+  }
+  const line = points.map((point, index) => `${index ? 'L' : 'M'}${scaleX(point.date).toFixed(1)},${scaleY(point.value).toFixed(1)}`).join('');
+  const area = `${line}L${scaleX(points[points.length - 1].date).toFixed(1)},${scaleY(0)}L${scaleX(points[0].date).toFixed(1)},${scaleY(0)}Z`;
+  const last = points[points.length - 1];
+  state.chartGeometry = { points: points.map(point => ({ ...point, x: scaleX(point.date), y: scaleY(point.value) })), width, height, top, bottom };
+  return `<section class="card">
+    <div class="chart-head"><h2>Cómo ha cambiado</h2>
+      <div class="segmented" role="group" aria-label="Qué ver">${SERIES.map(([key, label]) => `<button type="button" data-series="${key}" aria-pressed="${key === state.series}">${label}</button>`).join('')}</div></div>
+    <div class="chart" id="chart">
+      <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${SERIES.find(item => item[0] === state.series)[1]} en el tiempo, en millones de pesos">
+        ${ticks.map(tick => `<line class="${tick === 0 ? 'zero' : 'grid'}" x1="${left}" x2="${width - right}" y1="${scaleY(tick)}" y2="${scaleY(tick)}"></line>
+          <text class="axis-text" x="${left - 6}" y="${scaleY(tick) + 4}" text-anchor="end">${tick === 0 ? '0' : shortMillions(tick)}</text>`).join('')}
+        ${years.map(date => `<text class="axis-text" x="${scaleX(date)}" y="${height - 6}" text-anchor="middle">${MONTH_NAMES[Number(date.slice(5, 7)) - 1].slice(0, 3)} ${date.slice(2, 4)}</text>`).join('')}
+        <path d="${area}" fill="var(--accent)" fill-opacity="0.1"></path>
+        <path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>
+        <circle cx="${scaleX(last.date)}" cy="${scaleY(last.value)}" r="4.5" fill="var(--accent)" stroke="var(--surface)" stroke-width="2"></circle>
+        <text class="end-label" x="${scaleX(last.date) + 7}" y="${scaleY(last.value) + 4}">${shortMillions(last.value)}</text>
+        <line id="crosshair" class="crosshair" x1="0" x2="0" y1="${top}" y2="${height - bottom}" visibility="hidden"></line>
+        <circle id="hover-dot" r="4.5" fill="var(--accent)" stroke="var(--surface)" stroke-width="2" visibility="hidden"></circle>
+      </svg>
+      <div class="tooltip" id="tooltip" hidden></div>
+    </div>
+  </section>`;
+}
+function wireChart() {
+  const chart = document.getElementById('chart');
+  if (!chart) return;
+  const svg = chart.querySelector('svg'), tooltip = document.getElementById('tooltip');
+  const crosshair = document.getElementById('crosshair'), dot = document.getElementById('hover-dot');
+  const { points, width } = state.chartGeometry;
+  const show = event => {
+    const bounds = svg.getBoundingClientRect();
+    const x = (event.clientX - bounds.left) / bounds.width * width;
+    const nearest = points.reduce((best, point) => Math.abs(point.x - x) < Math.abs(best.x - x) ? point : best, points[0]);
+    crosshair.setAttribute('x1', nearest.x); crosshair.setAttribute('x2', nearest.x); crosshair.setAttribute('visibility', 'visible');
+    dot.setAttribute('cx', nearest.x); dot.setAttribute('cy', nearest.y); dot.setAttribute('visibility', 'visible');
+    tooltip.innerHTML = `${formatDate(nearest.date)}<b>${formatMoney(nearest.value)}</b>`;
+    tooltip.hidden = false;
+    const pixelX = nearest.x / width * bounds.width;
+    tooltip.style.left = Math.min(Math.max(pixelX, tooltip.offsetWidth / 2), bounds.width - tooltip.offsetWidth / 2) + 'px';
+  };
+  const hide = () => { crosshair.setAttribute('visibility', 'hidden'); dot.setAttribute('visibility', 'hidden'); tooltip.hidden = true; };
+  svg.addEventListener('pointermove', show);
+  svg.addEventListener('pointerdown', show);
+  svg.addEventListener('pointerleave', hide);
+}
+
+function monthName(dateText) { const [year, month] = dateText.split('-'); return MONTH_NAMES[Number(month) - 1] + ' ' + year; }
+function sparkline(values) {
+  if (values.length < 2) return '';
+  const width = 96, height = 28, low = Math.min(...values), high = Math.max(...values), span = high - low || 1;
+  const points = values.map((value, index) => [index / (values.length - 1) * (width - 6) + 3, height - 4 - (value - low) / span * (height - 8)]);
+  const last = points[points.length - 1];
+  return `<svg class="spark" viewBox="0 0 ${width} ${height}" aria-hidden="true"><path d="${points.map((point, index) => `${index ? 'L' : 'M'}${point[0].toFixed(1)},${point[1].toFixed(1)}`).join('')}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path><circle cx="${last[0]}" cy="${last[1]}" r="3" fill="var(--accent)"></circle></svg>`;
+}
+function investmentsHtml() {
+  const history = sortedSnapshots().filter(snapshot => totals(snapshot).investments > 0);
+  if (!history.length) return `<div class="empty">Todavía no hay inversiones anotadas. Agréguelas en un nuevo corte.</div>
+    <button type="button" class="primary" data-action="new-snapshot">+ Nuevo corte</button>`;
+  const latest = history[history.length - 1], previous = history[history.length - 2], first = history[0];
+  const total = totals(latest).investments;
+  const change = previous ? total - totals(previous).investments : 0;
+  const sinceStart = total - totals(first).investments;
+  const cards = ASSETS.filter(([key]) => history.some(snapshot => snapshot[key])).map(([key, label, currency]) => {
+    const pesos = assetPesos(latest, key);
+    const values = history.map(snapshot => currency === 'eur' ? snapshot[key] || 0 : assetPesos(snapshot, key));
+    const nativeChange = previous ? (latest[key] || 0) - (previous[key] || 0) : 0;
+    const firstSeen = history.find(snapshot => snapshot[key]);
+    const growth = (latest[key] || 0) - (firstSeen[key] || 0);
+    const formatNative = value => currency === 'eur' ? formatEuro(value) : formatMoney(value);
+    return `<div class="investment">
+      <div class="investment-head"><span class="title">${label}</span><span class="chip">${currency === 'eur' ? 'Euros' : 'Pesos'}</span></div>
+      <div class="investment-body">
+        <div><div class="value figure">${formatMoney(pesos)}</div>
+          <div class="sub">${currency === 'eur' ? `${formatEuro(latest[key] || 0)} × ${latest.tasaEuro.toLocaleString('es-CO')} · ` : ''}${total ? Math.round(pesos / total * 100) : 0}% del total</div></div>
+        ${sparkline(values)}
+      </div>
+      <div class="investment-foot">
+        <span>Último corte <b class="${signClass(nativeChange)}">${nativeChange ? (nativeChange > 0 ? '+' : '−') + formatNative(Math.abs(nativeChange)).replace('−', '') : 'sin cambio'}</b></span>
+        <span>Desde ${formatDate(firstSeen.fecha, true)} <b class="${signClass(growth)}">${growth ? (growth > 0 ? '+' : '−') + formatNative(Math.abs(growth)) : 'sin cambio'}</b></span>
+      </div>
+    </div>`;
+  }).join('');
+  return `
+  <section class="hero">
+    <div class="label">Inversiones al ${formatDate(latest.fecha)}</div>
+    <div class="big figure">${formatMoney(total)}</div>
+    ${previous ? `<div class="delta"><b class="${signClass(change)}">${formatSigned(change)}</b><span>desde el ${formatDate(previous.fecha)}</span></div>` : ''}
+    ${history.length > 2 ? `<div class="delta"><b class="${signClass(sinceStart)}">${formatSigned(sinceStart)}</b><span>desde el ${formatDate(first.fecha)}</span></div>` : ''}
+  </section>
+  <div class="investments">${cards}</div>
+  <p class="note" style="margin:0">Las inversiones en euros se pasan a pesos con la tasa de cada corte. Los cambios se muestran en la moneda de cada inversión.</p>
+  <button type="button" class="primary" data-action="new-snapshot">Actualizar valores en un nuevo corte</button>`;
+}
+
+function snapshotsHtml() {
+  const snapshots = sortedSnapshots();
+  return `<button type="button" class="primary" data-action="new-snapshot">+ Nuevo corte</button>
+  <p class="note" style="margin:0">Un corte es una foto de cómo están sus cuentas ese día. El nuevo arranca con los valores del último; cambie solo lo que cambió.</p>
+  ${snapshots.length ? `<div class="list">${snapshots.slice().reverse().map((snapshot, reverseIndex) => {
+    const index = snapshots.length - 1 - reverseIndex, current = totals(snapshot);
+    const change = index > 0 ? current.balance - totals(snapshots[index - 1]).balance : null;
+    return `<button type="button" class="row" data-snapshot="${escapeHtml(snapshot.id)}">
+      <span><span class="title">${formatDate(snapshot.fecha)}</span><br><span class="sub">A la mano ${formatMoney(current.mano)}</span></span>
+      <span class="value ${signClass(current.balance)}">${formatMoney(current.balance)}${change === null ? '' : `<small class="${signClass(change)}">${formatSigned(change)}</small>`}</span></button>`;
+  }).join('')}</div>` : '<div class="empty">Todavía no hay cortes.</div>'}`;
+}
+
+function owedHtml() {
+  const people = {};
+  state.data.movimientos.forEach(movement => {
+    people[movement.persona] = (people[movement.persona] || 0) + (movement.tipo === 'pago' ? -movement.monto : movement.monto);
+  });
+  const total = Object.values(people).reduce((sum, value) => sum + value, 0);
+  const movements = state.data.movimientos.slice().sort((first, second) => second.fecha.localeCompare(first.fecha));
+  return `<section class="hero">
+    <div class="label">Le deben en total</div>
+    <div class="big figure">${formatMoney(total)}</div>
+  </section>
+  <div class="people">${Object.entries(people).sort((first, second) => second[1] - first[1]).map(([person, value]) =>
+    `<div class="person ${value ? '' : 'settled'}"><div class="label">${escapeHtml(person)}</div><div class="value">${value ? formatMoney(value) : 'A paz y salvo'}</div></div>`).join('')}</div>
+  <button type="button" class="primary" data-action="new-movement">+ Anotar préstamo o pago</button>
+  ${movements.length ? `<div class="list">${movements.map(movement => `<button type="button" class="row" data-movement="${escapeHtml(movement.id)}">
+      <span><span class="title">${escapeHtml(movement.persona)} · ${escapeHtml(movement.motivo)}</span><br><span class="sub">${formatDate(movement.fecha)} · ${movement.tipo === 'pago' ? 'Me pagó' : 'Me debe'}</span></span>
+      <span class="value ${movement.tipo === 'pago' ? 'positive' : 'negative'}">${movement.tipo === 'pago' ? '+' : '−'}${formatMoney(movement.monto)}</span></button>`).join('')}</div>`
+  : '<div class="empty">No hay préstamos anotados.</div>'}`;
+}
+
+// ---------- Formularios ----------
+function moneyField(key, label, value, options = {}) {
+  const display = value ? (options.decimals ? value.toLocaleString('es-CO', { maximumFractionDigits: 2 }) : Math.round(value).toLocaleString('es-CO')) : '';
+  return `<div class="field ${options.full ? 'full' : ''}"><label for="field-${key}">${label}</label>
+    <input class="money" id="field-${key}" name="${key}" inputmode="decimal" autocomplete="off" placeholder="0" value="${display}"></div>`;
+}
+function newId(prefix) { return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function openSheet(title, formHtml, footerHtml, onReady) {
+  const root = document.getElementById('sheet-root');
+  root.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
+    <header><div class="wrap"><button type="button" class="ghost" data-action="close">Cancelar</button><h2>${escapeHtml(title)}</h2><span style="width:86px"></span></div></header>
+    <div class="wrap">${formHtml}</div><footer><div class="wrap">${footerHtml}</div></footer></div>`;
+  document.body.style.overflow = 'hidden';
+  root.querySelector('[data-action="close"]').addEventListener('click', closeSheet);
+  root.querySelectorAll('input.money').forEach(input => input.addEventListener('blur', () => {
+    if (!input.value.trim()) return;
+    const value = parseAmount(input.value);
+    const isEuro = input.name === 'bnpEuro' || ASSETS.some(([key, , currency]) => key === input.name && currency === 'eur');
+    input.value = isEuro ? value.toLocaleString('es-CO', { maximumFractionDigits: 2 }) : Math.round(value).toLocaleString('es-CO');
+  }));
+  onReady(root);
+}
+function closeSheet() { document.getElementById('sheet-root').innerHTML = ''; document.body.style.overflow = ''; }
+function wireDelete(root, onConfirm) {
+  const button = root.querySelector('[data-action="delete"]');
+  if (!button) return;
+  button.addEventListener('click', () => {
+    if (button.classList.contains('armed')) return onConfirm();
+    button.classList.add('armed'); button.textContent = 'Toque otra vez para borrar';
+    setTimeout(() => { button.classList.remove('armed'); button.textContent = button.dataset.label; }, 4000);
+  });
+}
+
+function openSnapshotForm(snapshot) {
+  const isNew = !snapshot;
+  const latest = sortedSnapshots().slice(-1)[0];
+  snapshot = snapshot || { ...(latest || { padres: 0, bnpEuro: 0, tasaEuro: 3500, banco: 0, amundi: 0, lote: 0, cdt: 0, ibkr: 0, deudaBeca: 0, deudaCredito: 0 }), id: newId('c'), fecha: today(), nota: '' };
+  const formHtml = `<form id="snapshot-form" autocomplete="off">
+    <fieldset><legend>Fecha del corte</legend>
+      <div class="field full"><label for="field-fecha">Fecha</label><input type="date" id="field-fecha" name="fecha" value="${snapshot.fecha}" required></div>
+    </fieldset>
+    <fieldset><legend>Cuentas</legend>
+      ${moneyField('padres', 'Padres', snapshot.padres, { full: true })}
+      ${moneyField('bnpEuro', 'BNP (euros)', snapshot.bnpEuro, { decimals: true })}
+      ${moneyField('tasaEuro', 'Tasa del euro', snapshot.tasaEuro)}
+      <div class="computed"><span>BNP en pesos</span><b id="bnp-cop"></b></div>
+      ${moneyField('banco', 'Davivienda / Nequi', snapshot.banco, { full: true })}
+    </fieldset>
+    <fieldset><legend>Inversiones</legend>
+      ${ASSETS.map(([key, label, currency]) => moneyField(key, currency === 'eur' ? label + ' (euros)' : label, snapshot[key], { decimals: currency === 'eur' })).join('')}
+      <div class="computed"><span>Inversiones en pesos</span><b id="investments-cop"></b></div>
+      <p class="note">Puede escribir cuentas como en Excel: 1500*4000 o 150000+30000.</p>
+    </fieldset>
+    <fieldset><legend>Deudas</legend>${DEBTS.map(([key, label]) => moneyField(key, label, snapshot[key])).join('')}</fieldset>
+    <fieldset><legend>Nota</legend><div class="field full"><label for="field-nota">Algo para recordar</label><input id="field-nota" name="nota" value="${escapeHtml(snapshot.nota)}"></div></fieldset>
+  </form>`;
+  const footerHtml = `<div class="totals"><span>Me deben <b id="sum-owed"></b></span><span>Balance <b id="sum-balance"></b></span></div>
+    <button type="submit" form="snapshot-form" class="primary">Guardar corte</button>
+    ${isNew ? '' : '<button type="button" class="danger" data-action="delete" data-label="Borrar corte">Borrar corte</button>'}`;
+  openSheet(isNew ? 'Nuevo corte' : 'Editar corte', formHtml, footerHtml, root => {
+    const form = root.querySelector('#snapshot-form');
+    const read = () => {
+      const values = Object.fromEntries(new FormData(form));
+      const record = { ...snapshot, fecha: values.fecha, nota: values.nota.trim() };
+      ['padres', 'bnpEuro', 'tasaEuro', 'banco', ...ASSETS.map(item => item[0]), ...DEBTS.map(item => item[0])].forEach(key => { record[key] = parseAmount(values[key]); });
+      return record;
+    };
+    const refresh = () => {
+      const record = read(), current = totals(record);
+      root.querySelector('#bnp-cop').textContent = formatMoney(current.bnp);
+      root.querySelector('#investments-cop').textContent = formatMoney(current.investments);
+      root.querySelector('#sum-owed').textContent = formatMoney(current.owed);
+      const balance = root.querySelector('#sum-balance');
+      balance.textContent = formatMoney(current.balance); balance.className = signClass(current.balance);
+    };
+    form.addEventListener('input', refresh);
+    form.addEventListener('submit', event => {
+      event.preventDefault();
+      queueChange({ type: 'guardar', table: 'cortes', record: read() });
+      closeSheet(); showToast('Corte guardado');
+    });
+    wireDelete(root, () => { queueChange({ type: 'borrar', table: 'cortes', id: snapshot.id }); closeSheet(); showToast('Corte borrado'); });
+    refresh();
+  });
+}
+
+function openMovementForm(movement) {
+  const isNew = !movement;
+  movement = movement || { id: newId('m'), fecha: today(), tipo: 'debe', persona: '', motivo: '', monto: 0 };
+  const names = [...new Set(state.data.movimientos.map(item => item.persona))].sort();
+  const formHtml = `<form id="movement-form" autocomplete="off"><fieldset>
+    <div class="type-switch" role="radiogroup" aria-label="Tipo">
+      <label><input type="radio" name="tipo" value="debe" ${movement.tipo !== 'pago' ? 'checked' : ''}><span>Me debe</span></label>
+      <label><input type="radio" name="tipo" value="pago" ${movement.tipo === 'pago' ? 'checked' : ''}><span>Me pagó</span></label>
+    </div>
+    <div class="field full"><label for="field-persona">Quién</label><input id="field-persona" name="persona" list="people" value="${escapeHtml(movement.persona)}" required>
+      <datalist id="people">${names.map(name => `<option value="${escapeHtml(name)}"></option>`).join('')}</datalist></div>
+    <div class="field full"><label for="field-motivo">Motivo</label><input id="field-motivo" name="motivo" value="${escapeHtml(movement.motivo)}" placeholder="Ej: Vuelos, multa carro"></div>
+    ${moneyField('monto', 'Monto (COP)', movement.monto)}
+    <div class="field"><label for="field-fecha">Fecha</label><input type="date" id="field-fecha" name="fecha" value="${movement.fecha}" required></div>
+  </fieldset></form>`;
+  const footerHtml = `<button type="submit" form="movement-form" class="primary">Guardar</button>
+    ${isNew ? '' : '<button type="button" class="danger" data-action="delete" data-label="Borrar">Borrar</button>'}`;
+  openSheet(isNew ? 'Anotar' : 'Editar', formHtml, footerHtml, root => {
+    const form = root.querySelector('#movement-form');
+    form.addEventListener('submit', event => {
+      event.preventDefault();
+      const values = Object.fromEntries(new FormData(form));
+      const record = { ...movement, tipo: values.tipo, persona: values.persona.trim(), motivo: values.motivo.trim(), monto: parseAmount(values.monto), fecha: values.fecha };
+      if (!record.monto) { form.monto.focus(); return showToast('Falta el monto'); }
+      queueChange({ type: 'guardar', table: 'movimientos', record });
+      closeSheet(); showToast('Guardado');
+    });
+    wireDelete(root, () => { queueChange({ type: 'borrar', table: 'movimientos', id: movement.id }); closeSheet(); showToast('Borrado'); });
+  });
+}
+
+let toastTimer;
+function showToast(text) {
+  const toast = document.getElementById('toast');
+  toast.textContent = text; toast.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { toast.hidden = true; }, 2200);
+}
+
+// ---------- Arranque ----------
+function showPin(failed) {
+  document.getElementById('app-view').hidden = true;
+  document.getElementById('pin-view').hidden = false;
+  document.getElementById('pin-error').hidden = !failed;
+  if (failed) document.getElementById('pin-error').textContent = /Demasiados/.test(failed) ? failed : 'Ese PIN no es. Intente otra vez.';
+  document.getElementById('pin-input').focus();
+}
+function showApp() {
+  document.getElementById('pin-view').hidden = true;
+  document.getElementById('app-view').hidden = false;
+  render();
+  loadFromServer();
+}
+document.getElementById('pin-submit').addEventListener('click', () => { storageSet(STORAGE_KEYS.pin, document.getElementById('pin-input').value.trim()); showApp(); });
+document.getElementById('pin-input').addEventListener('keydown', event => { if (event.key === 'Enter') document.getElementById('pin-submit').click(); });
+document.querySelector('nav.tabs').addEventListener('click', event => {
+  const button = event.target.closest('[data-tab]');
+  if (button) { state.tab = button.dataset.tab; render(); window.scrollTo(0, 0); }
+});
+document.getElementById('main').addEventListener('click', event => {
+  const target = event.target.closest('[data-series],[data-action],[data-snapshot],[data-movement]');
+  if (!target) return;
+  if (target.dataset.series) { state.series = target.dataset.series; render(); }
+  else if (target.dataset.action === 'new-snapshot') openSnapshotForm();
+  else if (target.dataset.action === 'new-movement') openMovementForm();
+  else if (target.dataset.snapshot) openSnapshotForm(state.data.cortes.find(snapshot => snapshot.id === target.dataset.snapshot));
+  else if (target.dataset.movement) openMovementForm(state.data.movimientos.find(movement => movement.id === target.dataset.movement));
+});
+window.addEventListener('online', flushOutbox);
+
+state.outbox = storageGet(STORAGE_KEYS.outbox, []);
+state.data = normalize(storageGet(STORAGE_KEYS.cache, { cortes: [], movimientos: [] }));
+if (isRemote && !storageGet(STORAGE_KEYS.pin, '')) showPin(false); else showApp();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');</script>
+</body>
+</html>
